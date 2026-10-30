@@ -30,13 +30,13 @@ def owns_order(user_id: str, order_id: str) -> bool:
     return any(o["order_id"] == order_id for o in list_user_orders(user_id))
 
 
-# 课程演示单。文档、curl 例子、各章验收脚本里到处写着 1001 和 2002,让每个账号名下都有
-# 这两笔,例子拿来即跑。想看归属校验拦人,随便报一个别的号(如 9999)就会被挡下。
-DEMO_ORDER_IDS = ("1001", "2002")
+# 课程演示单。1001 用于物流查询,2002 用于待付款场景,1003 用于已签收售后场景。
+# 每个账号都能直接跑这些例子;想看归属校验拦人,报别的账号的私有单号即可。
+DEMO_ORDER_IDS = ("1001", "2002", "1003")
 
 
 def list_user_orders(user_id: str) -> list[dict]:
-    """按 user_id 稳定列出该用户的订单(mock,不落库):两笔演示单 + 2-4 笔随机单。
+    """按 user_id 稳定列出该用户的订单(mock,不落库):三笔演示单 + 2-4 笔随机单。
     每笔用 order_snapshot 同源,前端选中后回填 order_id 即可 query_order。"""
     rng = random.Random(f"user_orders:{user_id}")
     ids = list(DEMO_ORDER_IDS)

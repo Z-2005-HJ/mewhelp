@@ -59,6 +59,28 @@ make dev                  # 依赖容器 + MCP :8101/:8102 + 应用 :8000
 | ch09 | Langfuse 自部署、数据飞轮、成本账 | `make langfuse-up` `make flywheel` `make eval-flywheel` `make cost-report` |
 | ch10 | 主题分类器。语料、微调、阈值扫描、ONNX 推理服务 | `make ch10-corpus` `make ch10-train` `make ch10-eval` |
 
+## Agent 评测基准
+
+项目已经内置一套统一的端到端 Agent benchmark。用例在 `evals/agent_cases.jsonl`，
+通过真实的 `/api/agent` 入口运行，不绕过 LangGraph、工具执行引擎或 Langfuse 回调。
+每条用例可以检查工具选择顺序、参数、工具结果状态、答案要点、拒绝工具和耗时。
+
+```bash
+make dev
+make eval-agent-benchmark
+```
+
+需要额外的大模型裁判分数时运行 `make eval-agent-benchmark-deepeval`，该命令会安装
+可选 `eval` 依赖组，并追加 DeepEval Task Completion 和 Tool Correctness 指标。
+
+结果写入 `data/agent_eval/latest.json` 和 `data/agent_eval/latest.md`。修改 Agent
+提示词、路由或工具策略后，重复运行同一批用例即可比较 baseline 与新版本；评测结果中的
+`user_id` 是本轮 trace 的 `eval_user_id` metadata，可用它回看 Langfuse 中对应的执行链路。
+评测集也覆盖退款选单与提交、工单确认与取消，并检查确认前后数据库记录和工具审计结果。
+
+这套 benchmark 是电商客服项目的评测入口，`scripts/eval_agent.py`、`eval_ch04.py`
+和 `eval_ch08.py` 继续保留，分别用于工具选择、RAG 和工单确认流的章节级验收。
+
 每条命令的前置条件（哪些服务得先起、哪张表得先建）写在飞书那篇文档的「各章验收」段里。
 `make help` 也能看到带说明的完整目标清单。
 

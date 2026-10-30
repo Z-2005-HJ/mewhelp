@@ -31,6 +31,24 @@ def test_route_by_intent_unknown_defaults_business():
     assert route_by_intent({}) == "business"
 
 
+@pytest.mark.parametrize("query", [
+    "智能猫砂盆还有库存吗？多少钱？",
+    "这款饮水机有货吗",
+    "猫粮售价是多少",
+])
+def test_product_inventory_and_price_questions_use_tools(query):
+    assert route_by_intent({"intent": "商品咨询", "resolved_query": query}) == "business"
+
+
+@pytest.mark.parametrize("query", [
+    "智能猫砂盆尺寸和材质",
+    "价格保护怎么申请",
+    "退货政策是什么",
+])
+def test_product_specs_and_policies_use_knowledge(query):
+    assert route_by_intent({"intent": "商品咨询", "resolved_query": query}) == "knowledge"
+
+
 def test_intent_to_route_covers_nine_classes():
     assert set(INTENT_TO_ROUTE) == {
         "投诉", "闲聊", "其他", "商品咨询", "退款退货", "售后", "人工", "物流", "订单"}

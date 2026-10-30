@@ -2,7 +2,7 @@
 # (知识库、评估集)会抛 UnicodeDecodeError。必须在 Python 启动前生效,所以设在这里而不是 .env。
 export PYTHONUTF8 = 1
 
-.PHONY: help kb-repatch dev test eval eval-check judge-check seed eval-ch07 eval-agent kb-preview kb-build kb-vectorize kb-mine eval-retrieval seed-conv eval-mining kb-reset milvus-up milvus-down smoke-rag eval-rag smoke-interrupt eval-ch06 mcp-up mcp-down langfuse-up langfuse-down
+.PHONY: help kb-repatch dev test eval eval-check judge-check seed eval-ch07 eval-agent eval-agent-benchmark eval-agent-benchmark-deepeval kb-preview kb-build kb-vectorize kb-mine eval-retrieval seed-conv eval-mining kb-reset milvus-up milvus-down smoke-rag eval-rag smoke-interrupt eval-ch06 mcp-up mcp-down langfuse-up langfuse-down
 
 # 目标一多就记不住谁要什么前置条件,带 ## 注释的挑出来列一遍
 help:  ## 列出带说明的目标
@@ -127,6 +127,12 @@ eval:
 
 eval-agent:
 	uv run python scripts/eval_agent.py
+
+eval-agent-benchmark:  ## 统一 Agent 评测:工具选择/参数/结果/答案/耗时,落 data/agent_eval
+	PYTHONPATH=. uv run python -m scripts.eval_agent_benchmark
+
+eval-agent-benchmark-deepeval:  ## 完整 Agent 评测 + DeepEval Task Completion/Tool Correctness LLM 指标
+	PYTHONPATH=. uv run --group eval python -m scripts.eval_agent_benchmark --deepeval
 
 eval-ch05:
 	uv run python scripts/eval_ch05.py

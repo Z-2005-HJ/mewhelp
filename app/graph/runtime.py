@@ -127,7 +127,7 @@ async def run_turn(user_id, message, conversation_id) -> dict:
     msg_id = await repository.append_message(cid, "user", content=message)
     # ch09:langfuse_session_id 让同一会话多轮在 Langfuse 界面串成一组(未挂回调时无害)
     config = {"configurable": {"thread_id": str(cid)},
-              "metadata": {"langfuse_session_id": str(cid)}}
+              "metadata": {"langfuse_session_id": str(cid), "eval_user_id": user_id}}
     final = await get_graph().ainvoke(
         _graph_input(user_id, message, cid, msg_id, summary, upto), config)
     await summarizer.maybe_schedule_summary(cid)   # ch07 轮后触发检查(后台跑,不阻塞返回)
@@ -136,22 +136,26 @@ async def run_turn(user_id, message, conversation_id) -> dict:
 
 async def resume_turn(conversation_id: int, resume_value) -> dict:
     """非流式续跑(供 /api/agent、eval):Command(resume) 回填后跑到下一个中断或结束。"""
-    if await repository.get_conversation(conversation_id) is None:
+    conversation = await repository.get_conversation(conversation_id)
+    if conversation is None:
         raise ConversationNotFound(conversation_id)
     config = {"configurable": {"thread_id": str(conversation_id)},
-              "metadata": {"langfuse_session_id": str(conversation_id)}}
+              "metadata": {"langfuse_session_id": str(conversation_id),
+                           "eval_user_id": getattr(conversation, "user_id", "")}}
     final = await get_graph().ainvoke(Command(resume=resume_value), config)
     await summarizer.maybe_schedule_summary(conversation_id)
     return {"conversation_id": conversation_id, "state": final,
             "interrupt": _interrupt_payload(final)}
 
 
-async def _stream_events(cid: int, stream_source) -> AsyncIterator[dict]:
+async def _stream_events(cid: int, stream_source, user_id: str | None = None) -> AsyncIterator[dict]:
     """astream 多模式 → 事件 dict。stream_source 为 _graph_input(...)(新一轮)或 Command(resume=...)(续跑)。
     遇 interrupt(updates 块含 __interrupt__,Task 1 冒烟钉死)→ 吐 interrupt 事件并结束本次流
     (前端点选后走 /api/actions/resume 续流)。"""
-    config = {"configurable": {"thread_id": str(cid)},
-              "metadata": {"langfuse_session_id": str(cid)}}
+    metadata = {"langfuse_session_id": str(cid)}
+    if user_id:
+        metadata["eval_user_id"] = user_id
+    config = {"configurable": {"thread_id": str(cid)}, "metadata": metadata}
     actions: list = []
     async for mode, chunk in get_graph().astream(
         stream_source, config, stream_mode=["messages", "updates"],
@@ -199,15 +203,18 @@ async def stream_turn(user_id, message, conversation_id) -> AsyncIterator[dict]:
     """流式:落 user 消息 → astream 多模式 → 事件 dict(供 /api/chat 转 SSE)。"""
     cid, summary, upto = await _ensure_conversation(user_id, conversation_id)
     msg_id = await repository.append_message(cid, "user", content=message)
-    async for ev in _stream_events(cid, _graph_input(user_id, message, cid, msg_id, summary, upto)):
+    async for ev in _stream_events(
+            cid, _graph_input(user_id, message, cid, msg_id, summary, upto), user_id):
         yield ev
     await summarizer.maybe_schedule_summary(cid)   # ch07 流吐完再触发(后台跑,不阻塞)
 
 
 async def stream_resume(conversation_id: int, resume_value) -> AsyncIterator[dict]:
     """前端点选订单后续跑同一会话的暂停流(Command(resume) 续 astream,事件与 stream_turn 同构)。"""
-    if await repository.get_conversation(conversation_id) is None:
+    conversation = await repository.get_conversation(conversation_id)
+    if conversation is None:
         raise ConversationNotFound(conversation_id)
-    async for ev in _stream_events(conversation_id, Command(resume=resume_value)):
+    async for ev in _stream_events(
+            conversation_id, Command(resume=resume_value), conversation.user_id):
         yield ev
     await summarizer.maybe_schedule_summary(conversation_id)

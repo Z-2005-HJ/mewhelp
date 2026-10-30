@@ -22,7 +22,7 @@ from app.core.prompts import (
     REFUND_JUDGE_HINT, SCRIPT_REPLY_CHITCHAT, SCRIPT_REPLY_OTHER,
 )
 from app.db import repository
-from app.graph.routing import INTENT_TO_ROUTE
+from app.graph.routing import route_by_intent
 from app.tools import business, engine, registry
 
 logger = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ async def classify_intent(state) -> dict:
     query = state.get("resolved_query") or _user_text(state)
     r = await intent_mod.classify(query, _history_text(state))
     intent, conf = r["intent"], r["confidence"]
-    route = INTENT_TO_ROUTE.get(intent, "business")
+    route = route_by_intent({"intent": intent, "resolved_query": query})
     tag_intent(intent, conf)   # ch09:意图进当前 trace 的 metadata+tag,Cost Control 按意图分堆
     return {"intent": intent, "intent_confidence": conf, "route": route,
             "trace": {"intent": intent, "intent_confidence": conf, "route": route}}
@@ -317,7 +317,8 @@ async def main_agent(state, config=None) -> dict:
     注:streaming=True 下 ChatOpenAI 默认不回传 usage_metadata;usage 回传已在
     get_chat_model 统一收口(ch09 stream_usage=True),这里不再单独 bind。"""
     specs = await registry.get_all_specs()   # ch08 现问现拿:内置+MCP 合并清单,每轮现拉
-    model = get_chat_model(streaming=True).bind_tools([s.tool for s in specs])
+    model = get_chat_model(streaming=True, temperature=0).bind_tools(
+        [s.tool for s in specs])
     msgs = _agent_messages(state)
     _log_model_context(state, msgs)   # ch07:摘要+滑窗进日志,验收 tail -f 可见
     ai: AIMessage = await model.ainvoke(msgs, config)

@@ -3,16 +3,59 @@
 # Agent网站：xiaolinnote.com
 # 简历模版：jianli.xiaolinnote.com
 def test_create_refund_writes_ticket(client, monkeypatch):
+    audits = []
+
+    async def fake_conversation(cid):
+        assert cid == 7
+        return type("Conversation", (), {"user_id": "eval-user"})()
+
     async def fake_create(cid, desc, ttype):
         assert cid == 7 and ttype == "退款" and "1001" in desc and "质量问题" in desc
         return "T20260716001"
+
+    async def fake_audit(**kwargs):
+        audits.append(kwargs)
+
     from app.api import actions
+    monkeypatch.setattr(actions.repository, "get_conversation", fake_conversation)
+    monkeypatch.setattr(actions.business, "owns_order", lambda uid, oid: uid == "eval-user" and oid == "1001")
     monkeypatch.setattr(actions.repository, "create_ticket", fake_create)
+    monkeypatch.setattr(actions.repository, "insert_tool_audit", fake_audit)
     r = client.post("/api/actions/create-refund", json={
         "conversation_id": 7, "order_id": "1001", "reason": "质量问题"})
     assert r.status_code == 200
     assert r.json()["ticket_no"] == "T20260716001"
     assert r.json()["status"] == "退款申请已提交"
+    assert len(audits) == 1
+    assert audits[0]["tool_name"] == "submit_refund"
+    assert audits[0]["arguments"] == {"order_id": "1001", "reason": "质量问题"}
+    assert audits[0]["status"] == "成功"
+
+
+def test_create_refund_rejects_order_not_owned_by_conversation(client, monkeypatch):
+    audits = []
+
+    async def fake_conversation(cid):
+        return type("Conversation", (), {"user_id": "eval-user"})()
+
+    async def fake_audit(**kwargs):
+        audits.append(kwargs)
+
+    async def should_not_create(*args):
+        raise AssertionError("unauthorized refund must not write a ticket")
+
+    from app.api import actions
+    monkeypatch.setattr(actions.repository, "get_conversation", fake_conversation)
+    monkeypatch.setattr(actions.business, "owns_order", lambda uid, oid: False)
+    monkeypatch.setattr(actions.repository, "insert_tool_audit", fake_audit)
+    monkeypatch.setattr(actions.repository, "create_ticket", should_not_create)
+    r = client.post("/api/actions/create-refund", json={
+        "conversation_id": 7, "order_id": "9999", "reason": "质量问题"})
+
+    assert r.status_code == 403
+    assert audits[0]["tool_name"] == "submit_refund"
+    assert audits[0]["status"] == "权限拒绝"
+    assert audits[0]["arguments"]["order_id"] == "9999"
 
 
 def test_create_refund_rejects_bad_reason(client):

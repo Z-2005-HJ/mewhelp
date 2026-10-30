@@ -123,7 +123,7 @@ async def test_退款不给别人的单开表单入口(monkeypatch, builtin_only
 
     monkeypatch.setattr(nodes.engine, "execute_tool_call", fake_exec)
     uid, other = "u-agent", "u-someone-else"
-    # 得挑对方的**私有**单:演示单(1001/2002)每个账号都有,拿它当「别人的单」不成立
+    # 得挑对方的**私有**单:演示单(1001/2002/1003)每个账号都有,拿它当「别人的单」不成立
     his = [o["order_id"] for o in nodes.business.list_user_orders(other)
            if o["order_id"] not in nodes.business.DEMO_ORDER_IDS][0]
     ai = AIMessage("", tool_calls=[{"name": "submit_refund",

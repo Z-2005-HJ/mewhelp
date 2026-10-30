@@ -4,6 +4,7 @@
 # 简历模版：jianli.xiaolinnote.com
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException
@@ -19,6 +20,7 @@ from app.schemas.actions import (
     CreateTicketResponse,
     ResumeRequest,
 )
+from app.tools import business
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,14 +44,49 @@ async def create_ticket_action(req: CreateTicketRequest) -> CreateTicketResponse
 
 @router.post("/api/actions/create-refund", response_model=CreateRefundResponse)
 async def create_refund_action(req: CreateRefundRequest) -> CreateRefundResponse:
-    """退款表单提交:写 tickets(ticket_type='退款'),描述带订单号 + 固定类目原因。复用 ch02 工单能力。"""
+    """退款表单提交:从会话身份校验订单归属,再写退款工单和工具审计。"""
     desc = f"退款申请 订单号={req.order_id} 原因={req.reason}"
+    args = {"order_id": req.order_id, "reason": req.reason}
+    conversation = await repository.get_conversation(req.conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    started = time.monotonic()
+    if not business.owns_order(conversation.user_id, req.order_id):
+        await _audit_refund(
+            req.conversation_id, args, "权限拒绝", "退款订单不属于当前会话用户",
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        raise HTTPException(status_code=403, detail="该订单不属于当前用户,无法提交退款")
+
     try:
         ticket_no = await repository.create_ticket(req.conversation_id, desc, "退款")
     except SQLAlchemyError:
+        await _audit_refund(
+            req.conversation_id, args, "失败", "退款工单写入失败",
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
         logger.exception("退款单创建失败 conv=%s", req.conversation_id)
         raise HTTPException(status_code=503, detail="退款系统暂时不可用,请稍后重试")
+    await _audit_refund(
+        req.conversation_id, args, "成功", f"退款工单已创建:{ticket_no}",
+        duration_ms=int((time.monotonic() - started) * 1000),
+    )
     return CreateRefundResponse(ticket_no=ticket_no)
+
+
+async def _audit_refund(conversation_id: int, args: dict, status: str,
+                        result_summary: str, *, duration_ms: int) -> None:
+    try:
+        await repository.insert_tool_audit(
+            conversation_id=conversation_id, tool_call_id=None,
+            tool_name="submit_refund", tool_source="builtin", mcp_server=None,
+            arguments=args, result_summary=result_summary, status=status,
+            error_message=result_summary if status != "成功" else None,
+            retry_count=0, duration_ms=duration_ms,
+        )
+    except Exception:
+        logger.exception("退款工具审计写入失败 conv=%s status=%s", conversation_id, status)
 
 
 @router.post("/api/actions/resume")

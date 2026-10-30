@@ -22,8 +22,16 @@ INTENT_TO_ROUTE: dict[str, str] = {
 
 
 def route_by_intent(state) -> str:
-    """按意图分流;未知意图保守归 business(让 Agent 自己应对)。"""
-    return INTENT_TO_ROUTE.get(state.get("intent", ""), "business")
+    """按意图分流;商品实时库存/价格走工具,商品说明与政策走知识库。"""
+    intent = state.get("intent", "")
+    if intent == "商品咨询":
+        query = state.get("resolved_query", "")
+        policy_terms = ("价格保护", "价保")
+        live_product_terms = ("库存", "现货", "有货", "多少钱", "售价", "卖多少钱")
+        if (not any(term in query for term in policy_terms)
+                and any(term in query for term in live_product_terms)):
+            return "business"
+    return INTENT_TO_ROUTE.get(intent, "business")
 
 
 def confidence_gate(state) -> str:
